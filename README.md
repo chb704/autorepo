@@ -225,6 +225,7 @@ When there is no PR with requested changes and no claimable issue, the runner
 runs one randomly selected fallback audit track unless `FALLBACK_MODE=off` or a
 fallback cooldown is active. Normal claimable issue work always wins and clears
 fallback state.
+Fallback audits are aimed at the project codebase in the repository.
 
 Fallback tracks are deliberately small:
 
