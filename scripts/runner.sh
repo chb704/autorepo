@@ -25,6 +25,7 @@ ISSUE_LIMIT="${ISSUE_LIMIT:-50}"
 READY_LABEL="${READY_LABEL:-ready}"
 ANY_LANE_LABEL="${ANY_LANE_LABEL:-lane:cdx-any}"
 TEST_COMMAND="${TEST_COMMAND:-bash -n scripts/runner.sh}"
+FALLBACK_MODE="${FALLBACK_MODE:-on}"
 
 issue=""
 CLAIM_LABEL=""
@@ -70,6 +71,93 @@ slugify() {
     | cut -c 1-48
 }
 
+is_uint() {
+  case "$1" in
+    ''|*[!0-9]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+is_fallback_track() {
+  case "$1" in
+    security|performance|tests) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+random_fallback_track() {
+  local n
+
+  while :; do
+    n="$RANDOM"
+    [ "$n" -lt 32766 ] && break
+  done
+
+  case $((n % 3)) in
+    0) printf '%s\n' "security" ;;
+    1) printf '%s\n' "performance" ;;
+    2) printf '%s\n' "tests" ;;
+  esac
+}
+
+fallback_track_scope() {
+  case "$1" in
+    security)
+      cat <<'SCOPE'
+Track scope:
+
+Run a read-only security review of this skeleton's automation, workflows,
+permissions, ignored files, and public-repo guardrails. Do not print secrets,
+dump private data, run destructive probes, change auth, change workflow trust
+boundaries, or create an issue with exploit steps that would be unsafe in a
+public repo.
+
+Create at most one issue when there is a concrete missing control or risky
+automation behavior, with exact file and line references.
+SCOPE
+      ;;
+    performance)
+      cat <<'SCOPE'
+Track scope:
+
+Run a static performance audit of the runner and CI workflow path. Focus on
+avoidable slow network calls, needless repeated GitHub queries, serial work that
+could be batched, expensive defaults, or scheduled-run waste.
+
+Create at most one issue only when there is concrete evidence and a small fix
+that fits this skeleton.
+SCOPE
+      ;;
+    tests)
+      cat <<'SCOPE'
+Track scope:
+
+Audit test and validation gaps for the runner, workflows, and docs contract.
+Focus on missing shell validation, fake-gh scenario coverage, YAML checks, and
+contracts that can regress without detection.
+
+Create at most one issue with exact acceptance criteria. Do not file broad
+"increase coverage" work.
+SCOPE
+      ;;
+  esac
+}
+
+default_fallback_state_file() {
+  local repo_slug state_root
+
+  repo_slug="$(normalize_machine "$1")"
+  if [ -n "${XDG_STATE_HOME:-}" ]; then
+    state_root="$XDG_STATE_HOME"
+  elif [ -n "${HOME:-}" ]; then
+    state_root="${HOME}/.local/state"
+  else
+    state_root="${TMPDIR:-/tmp}"
+  fi
+
+  printf '%s/autorepo/%s/%s.state\n' "$state_root" "$repo_slug" "$CDX_MACHINE"
+}
+
 machine_raw="${CDX_MACHINE:-$(hostname -s)}"
 CDX_MACHINE="$(normalize_machine "$machine_raw")"
 [ -n "$CDX_MACHINE" ] || die "CDX_MACHINE resolved to an empty identifier"
@@ -91,7 +179,16 @@ setup_labels() {
   gh label create "$CLAIM_LABEL" \
     --color "bfdadc" \
     --description "Issue is claimed by machine ${CDX_MACHINE}" >/dev/null 2>&1 || true
-  log "labels ready: ${READY_LABEL}, ${ANY_LANE_LABEL}, ${LANE_LABEL}, ${CLAIM_LABEL}"
+  gh label create "fallback:security" \
+    --color "d73a4a" \
+    --description "Fallback audit finding for security" >/dev/null 2>&1 || true
+  gh label create "fallback:performance" \
+    --color "fbca04" \
+    --description "Fallback audit finding for performance" >/dev/null 2>&1 || true
+  gh label create "fallback:tests" \
+    --color "0e8a16" \
+    --description "Fallback audit finding for tests" >/dev/null 2>&1 || true
+  log "labels ready: ${READY_LABEL}, ${ANY_LANE_LABEL}, ${LANE_LABEL}, ${CLAIM_LABEL}, fallback:security, fallback:performance, fallback:tests"
 }
 
 if [ "${1:-}" = "--setup-labels" ]; then
@@ -113,6 +210,7 @@ log "machine=${CDX_MACHINE} lane=${LANE_LABEL}"
 gh auth status >/dev/null 2>&1 || die "gh is not authenticated. Run: gh auth login"
 repo="$(gh repo view --json nameWithOwner --jq '.nameWithOwner')" || die "cannot reach GitHub repo"
 log "repo=${repo}"
+CDX_FALLBACK_STATE_FILE="${CDX_FALLBACK_STATE_FILE:-$(default_fallback_state_file "$repo")}"
 
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "not inside a git worktree"
 [ -z "$(git status --porcelain)" ] || die "working tree is not clean"
@@ -146,6 +244,7 @@ handle_review_feedback() {
   feedback_command="${FEEDBACK_COMMAND:-$AGENT_COMMAND}"
 
   log "PR #${pr_number} has requested changes: ${pr_title}"
+  clear_fallback_state
 
   if [ "$is_cross" = "true" ]; then
     log "PR #${pr_number} comes from another repository. Skipping automation for safety."
@@ -220,6 +319,210 @@ PROMPT
   exit 0
 }
 
+fallback_state_consecutive=0
+fallback_state_cooldown_until=0
+fallback_state_last_track=""
+
+load_fallback_state() {
+  local line key value malformed
+  local state_consecutive="" state_cooldown="" state_track="" state_at=""
+
+  fallback_state_consecutive=0
+  fallback_state_cooldown_until=0
+  fallback_state_last_track=""
+
+  [ -f "$CDX_FALLBACK_STATE_FILE" ] || return 0
+
+  malformed=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -n "$line" ] || continue
+    case "$line" in
+      *=*) ;;
+      *) malformed=1; break ;;
+    esac
+
+    key="${line%%=*}"
+    value="${line#*=}"
+
+    case "$key" in
+      consecutive_fallbacks)
+        if is_uint "$value"; then
+          state_consecutive="$value"
+        else
+          malformed=1
+        fi
+        ;;
+      cooldown_until_epoch)
+        if [ -z "$value" ] || is_uint "$value"; then
+          state_cooldown="${value:-0}"
+        else
+          malformed=1
+        fi
+        ;;
+      last_fallback_track)
+        if [ -z "$value" ] || is_fallback_track "$value"; then
+          state_track="$value"
+        else
+          malformed=1
+        fi
+        ;;
+      last_fallback_at_epoch)
+        if is_uint "$value"; then
+          state_at="$value"
+        else
+          malformed=1
+        fi
+        ;;
+      *)
+        ;;
+    esac
+  done < "$CDX_FALLBACK_STATE_FILE"
+
+  if [ "$malformed" -ne 0 ]; then
+    log "ignoring malformed fallback state: ${CDX_FALLBACK_STATE_FILE}"
+    return 0
+  fi
+
+  fallback_state_consecutive="${state_consecutive:-0}"
+  fallback_state_cooldown_until="${state_cooldown:-0}"
+  fallback_state_last_track="$state_track"
+  : "${state_at:-0}"
+}
+
+write_fallback_state() {
+  local consecutive cooldown_until last_track state_dir tmp_state
+
+  consecutive="$1"
+  cooldown_until="$2"
+  last_track="$3"
+  state_dir="$(dirname "$CDX_FALLBACK_STATE_FILE")"
+  mkdir -p "$state_dir"
+  tmp_state="${CDX_FALLBACK_STATE_FILE}.$$"
+
+  {
+    printf 'consecutive_fallbacks=%s\n' "$consecutive"
+    printf 'cooldown_until_epoch=%s\n' "$cooldown_until"
+    printf 'last_fallback_track=%s\n' "$last_track"
+    printf 'last_fallback_at_epoch=%s\n' "$(date +%s)"
+  } > "$tmp_state"
+
+  mv "$tmp_state" "$CDX_FALLBACK_STATE_FILE"
+}
+
+clear_fallback_state() {
+  if [ -f "$CDX_FALLBACK_STATE_FILE" ]; then
+    rm -f "$CDX_FALLBACK_STATE_FILE"
+    log "cleared fallback state"
+  fi
+}
+
+run_fallback() {
+  local now track fallback_label fallback_command fallback_prompt fallback_scope new_consecutive
+  local cooldown_seconds cooldown_until
+
+  if [ "$FALLBACK_MODE" = "off" ]; then
+    log "fallback mode is off. Exiting without work."
+    exit 0
+  fi
+
+  load_fallback_state
+
+  now="$(date +%s)"
+  if [ "$fallback_state_cooldown_until" -gt 0 ]; then
+    if [ "$fallback_state_cooldown_until" -gt "$now" ]; then
+      log "fallback cooldown active until epoch ${fallback_state_cooldown_until}. Exiting without work."
+      exit 0
+    fi
+
+    log "fallback cooldown expired"
+    fallback_state_consecutive=0
+    fallback_state_cooldown_until=0
+  fi
+
+  track="$(random_fallback_track)"
+  fallback_label="fallback:${track}"
+  fallback_command="${FALLBACK_COMMAND:-$AGENT_COMMAND}"
+  fallback_prompt="${TMP_DIR}/fallback-${track}-prompt.md"
+  fallback_scope="$(fallback_track_scope "$track")"
+
+  cat > "$fallback_prompt" <<PROMPT
+You are the fallback audit agent for ${repo}.
+
+Read AGENTS.md first and follow it.
+
+No claimable issue exists after the runner checked review feedback and scanned
+eligible issues.
+
+Fallback track: ${track}
+Machine: ${CDX_MACHINE}
+Lane label: ${LANE_LABEL}
+Repository: ${repo}
+
+Run a small audit for this one track only. Do not create a branch, commit, pull
+request, implementation patch, database change, application/API route,
+production mutation, Node package change, framework setup, generated app, cloud
+resource, or any other tracked-file change.
+
+Do not print, copy, transform, or expose secrets, credentials, account IDs,
+production connection strings, private local context, or private data.
+
+You may create at most one GitHub Issue, and only for a concrete, bounded,
+evidence-backed finding that a future normal automation lane can finish in about
+30 minutes. If there is no such finding, create nothing and exit successfully.
+Do not create filler issues, broad backlog items, speculative work, or issues
+without exact evidence.
+
+Any fallback-created issue must use all of these labels:
+
+- ${READY_LABEL}
+- ${ANY_LANE_LABEL}
+- ${fallback_label}
+
+The issue must include:
+
+- the specific evidence you observed, with file paths or commands when useful
+- the bounded fix scope
+- clear acceptance criteria
+
+${fallback_scope}
+
+Leave the working tree clean. The runner will exit nonzero if fallback leaves
+tracked or untracked file changes.
+PROMPT
+
+  export FALLBACK_TRACK="$track"
+  export FALLBACK_LABEL="$fallback_label"
+  export FALLBACK_PROMPT_FILE="$fallback_prompt"
+  export CDX_FALLBACK_STATE_FILE
+  export CDX_MACHINE
+  export LANE_LABEL
+
+  log "running fallback audit track: ${track}"
+  if ! bash -lc "$fallback_command" < "$fallback_prompt"; then
+    clear_fallback_state
+    die "fallback command failed"
+  fi
+
+  if [ -n "$(git status --porcelain)" ]; then
+    clear_fallback_state
+    die "fallback command left the working tree dirty"
+  fi
+
+  now="$(date +%s)"
+  new_consecutive=$((fallback_state_consecutive + 1))
+  cooldown_until=0
+  if [ "$new_consecutive" -ge 2 ]; then
+    cooldown_seconds=$((14400 + RANDOM % 7201))
+    cooldown_until=$((now + cooldown_seconds))
+    log "fallback cooldown armed for ${cooldown_seconds}s until epoch ${cooldown_until}"
+  else
+    log "fallback success recorded; consecutive_fallbacks=${new_consecutive}"
+  fi
+
+  write_fallback_state "$new_consecutive" "$cooldown_until" "$track"
+  exit 0
+}
+
 handle_review_feedback
 
 find_issue() {
@@ -239,8 +542,10 @@ issue="$(find_issue)"
 
 if [ -z "$issue" ]; then
   log "no eligible issues. Need labels: ${READY_LABEL} + (${ANY_LANE_LABEL} or ${LANE_LABEL})"
-  exit 0
+  run_fallback
 fi
+
+clear_fallback_state
 
 issue_title="$(gh issue view "$issue" --json title --jq '.title')"
 issue_url="$(gh issue view "$issue" --json url --jq '.url')"

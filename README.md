@@ -82,6 +82,9 @@ That creates:
 - `lane:cdx-any`
 - `lane:cdx-mini`
 - `claimed:cdx-mini`
+- `fallback:security`
+- `fallback:performance`
+- `fallback:tests`
 
 Run the same setup once per machine so each one has its own lane and claim label.
 
@@ -144,6 +147,8 @@ What should happen:
 8. It commits, pushes, and opens a PR with `Closes #<issue-number>`.
 
 If the agent makes no changes, the runner stops and releases the claim.
+If there is no claimable issue, the runner may run one small fallback audit
+track instead of exiting; see "Fallback Mode" below.
 
 ### 6. Put it on an hourly schedule
 
@@ -196,6 +201,10 @@ Useful env:
   real test command as soon as the repo has real code.
 - `FEEDBACK_COMMAND`: defaults to `AGENT_COMMAND`. Used when an open PR in the
   machine lane has requested changes.
+- `FALLBACK_MODE`: set to `off` to keep the old no-issue no-op behavior.
+- `FALLBACK_COMMAND`: defaults to `AGENT_COMMAND`. Used for no-issue fallback
+  audits.
+- `CDX_FALLBACK_STATE_FILE`: overrides the local fallback state file path.
 - `CLAIM_WAIT_SECONDS`: defaults to `60`.
 - `BASE_BRANCH`: defaults to `main`.
 - `BRANCH_PREFIX`: defaults to `codex/issue-`.
@@ -209,6 +218,51 @@ lane. If GitHub marks one as `CHANGES_REQUESTED`, it checks out that branch,
 sends the PR discussion to `FEEDBACK_COMMAND`, runs tests, commits, pushes, and
 exits without taking new work. Plain comments that do not request changes still
 need human judgment or a project-specific feedback policy.
+
+## Fallback Mode
+
+When there is no PR with requested changes and no claimable issue, the runner
+runs one randomly selected fallback audit track unless `FALLBACK_MODE=off` or a
+fallback cooldown is active. Normal claimable issue work always wins and clears
+fallback state.
+
+Fallback tracks are deliberately small:
+
+- `security`
+- `performance`
+- `tests`
+
+The runner sends a generated fallback prompt to `FALLBACK_COMMAND`, which
+defaults to `AGENT_COMMAND`. The prompt forbids branches, PRs, commits,
+implementation patches, app/API changes, DB changes, package/framework setup,
+generated apps, cloud resources, production mutation, secret handling, and filler
+issues. It allows at most one GitHub Issue, only for a concrete, bounded,
+evidence-backed finding.
+
+Fallback-created issues must use:
+
+- `ready`
+- `lane:cdx-any`
+- exactly one of `fallback:security`, `fallback:performance`, or
+  `fallback:tests`
+
+Fallback state is stored outside tracked files by default at:
+
+```text
+${XDG_STATE_HOME:-$HOME/.local/state}/autorepo/<owner-repo>/<machine>.state
+```
+
+Use `CDX_FALLBACK_STATE_FILE` to override the path. State is repo-specific and
+lane-specific by default, parsed as known key/value fields, and never sourced as
+shell code. Missing or malformed state is treated as empty. The v1 state fields
+are `consecutive_fallbacks`, `cooldown_until_epoch`, `last_fallback_track`, and
+`last_fallback_at_epoch`.
+
+Each successful fallback round must leave the worktree clean. The first clean
+round records `consecutive_fallbacks=1`. The second consecutive clean round arms
+a randomized cooldown for 4 to 6 hours. While cooldown is active, no fallback
+command runs. If a fallback command leaves tracked or untracked changes, the
+runner exits nonzero.
 
 ## Codex Skill
 
