@@ -1,21 +1,47 @@
+# Local-only writing context
+POST.md
+
 # Dependencies
 node_modules/
 .pnp
 .pnp.*
 
-# Environment & secrets - never commit these
+# Environment and local config
 .env
 .env.*
 !.env.example
-*.pem
+.envrc
+.npmrc
+.netrc
+
+# Secrets and private keys
 *.key
+*.pem
+*.p8
+*.p12
+*.pfx
+*.crt
+id_rsa*
+id_ed25519*
+*.mobileprovision
 .aws/
+.kube/
 credentials
+
+# Database dumps and local state
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.backup
+*.tfstate
+*.tfstate.*
 
 # Build output
 dist/
 build/
 out/
+coverage/
 *.tsbuildinfo
 
 # AWS CDK
@@ -29,7 +55,7 @@ npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
 
-# OS / editor cruft
+# OS and editor cruft
 .DS_Store
 Thumbs.db
 .idea/
