@@ -1,7 +1,7 @@
 # autorepo
 
 A public monorepo skeleton for the agentic development loop from
-**How I Code: Summer 2026 Edition**.
+**[How I Code: Summer 2026 Edition](https://chrisboyd.me/blog/how-i-code-summer-2026-edition/)**.
 
 This is not a sample app. It is the boring substrate: planning docs, agent
 instructions, issue labels, lane claiming, an hourly runner, and CI review gates.
