@@ -68,29 +68,32 @@ a claimable issue appears.
 
 ### `security`
 
-Run a read-only security review of this skeleton's automation, workflows,
-permissions, ignored files, and public-repo guardrails. Do not print secrets,
-dump private data, run destructive probes, change auth, change workflow trust
-boundaries, or create an issue with exploit steps that would be unsafe in a
-public repo.
+Run a read-only security review of the project codebase in this repository.
+Focus on application, package, service, infrastructure, and configuration code
+that affects real runtime behavior: authentication, authorization, input
+handling, data exposure, dependency/configuration risk, unsafe defaults, secret
+handling, and boundaries around external systems.
 
 Create at most one issue when there is a concrete missing control or risky
-automation behavior, with exact file and line references.
+behavior, with exact file and line references.
 
 ### `performance`
 
-Run a static performance audit of the runner and CI workflow path. Focus on
-avoidable slow network calls, needless repeated GitHub queries, serial work that
-could be batched, expensive defaults, or scheduled-run waste.
+Run a static performance audit of the project codebase in this repository. Focus
+on application, package, service, infrastructure, and configuration code that
+affects real runtime behavior: hot paths, startup cost, build/runtime waste,
+queries, caching, bundle size, expensive loops, repeated network calls, and
+avoidable serialization.
 
 Create at most one issue only when there is concrete evidence and a small fix
-that fits this skeleton.
+that fits the project.
 
 ### `tests`
 
-Audit test and validation gaps for the runner, workflows, and docs contract.
-Focus on missing shell validation, fake-`gh` scenario coverage, YAML checks, and
-contracts that can regress without detection.
+Audit test and validation gaps for the project codebase in this repository.
+Focus on application, package, service, infrastructure, and configuration code
+that affects real behavior: business rules, APIs, CLI paths, critical UI flows,
+migrations, integrations, and regression-prone contracts.
 
 Create at most one issue with exact acceptance criteria. Do not file broad
 "increase coverage" work.

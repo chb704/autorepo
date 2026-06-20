@@ -298,6 +298,7 @@ test_fallback_invoked_and_records_first_round() {
   assert_file_contains "${dir}/fallback-prompt.md" "fallback:${track}" "fallback prompt labels"
   assert_file_contains "${dir}/fallback-prompt.md" "Do not print, copy, transform, or expose secrets" "fallback prompt secret handling"
   assert_file_contains "${dir}/fallback-prompt.md" "Do not create filler issues" "fallback prompt filler issues"
+  assert_file_contains "${dir}/fallback-prompt.md" "project codebase in this repository" "fallback prompt project target"
 
   pass "no claimable issue invokes fallback and records first round"
 }
