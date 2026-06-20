@@ -1,35 +1,55 @@
-# PRD: <Feature name>
+# PRD: <Feature Name>
 
-> Template PRD. Copy this file, rename it, and fill it in - then ask your agent to
-> "give this PRD a letter grade, with reasoning" and iterate until it's an A.
-> Delete this example once you've got real PRDs in here.
+Copy this file, rename it, and fill it in. Then ask your planning agent to grade
+the PRD with reasoning. If it is below an A, revise it before turning it into
+GitHub Issues.
+
+Delete this example once the repo has real PRDs.
 
 ## Problem
 
-What hurts today, and for whom.
+What hurts today, who it hurts, and why it matters now.
 
 ## Goal
 
-What "done" looks like in one or two sentences.
+What "done" looks like in one or two concrete sentences.
+
+## Users
+
+Who uses this and what they are trying to accomplish.
 
 ## Requirements
 
-- ...
-- ...
+- Requirement 1.
+- Requirement 2.
+- Requirement 3.
 
-## Non-goals
+## Non-Goals
 
-- What this explicitly does **not** do (so the agent doesn't scope-creep).
+- What this explicitly does not do.
+- What should be left for a separate issue.
 
 ## Constraints
 
-- Architecture, infra, performance, and security constraints the implementation must respect.
+- Architecture constraints.
+- Infrastructure constraints.
+- Performance constraints.
+- Security and privacy constraints.
 
-## Acceptance criteria
+## Acceptance Criteria
 
-- [ ] ...
-- [ ] ...
+- [ ] Observable behavior 1.
+- [ ] Observable behavior 2.
+- [ ] Observable behavior 3.
 
-## Test plan
+## Test Plan
 
-How we'll know it works.
+- Unit tests:
+- Integration tests:
+- Manual checks:
+- Not covered yet:
+
+## Issue Slicing Notes
+
+Break this PRD into independent, agent-sized issues. Each issue should fit in
+roughly 30 minutes of implementation work, leaving time for review feedback.

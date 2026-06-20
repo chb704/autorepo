@@ -1,9 +1,3 @@
-# Code Review - automated cross-provider PR review (skeleton).
-#
-# Runs on every PR. Use a DIFFERENT provider here than the one that wrote the code -
-# a model reviewing its own work shares its own blind spots. Posts findings as PR
-# comments the agent picks up on its next loop.
-
 name: Code Review
 
 on:
@@ -15,13 +9,37 @@ permissions:
 
 jobs:
   code-review:
+    name: Cross-provider code review
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Cross-provider review
+    steps:
+      - name: Check out base branch only
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Collect PR diff
         env:
-          # Whichever provider did NOT implement the change. Supply via secrets.
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr diff "$PR_NUMBER" --patch > pr.diff
+          test -s pr.diff
+
+      - name: Run review placeholder
+        env:
           REVIEW_API_KEY: ${{ secrets.REVIEW_API_KEY }}
         run: |
-          echo "TODO: pass the PR diff to a review prompt and post findings as PR comments."
+          if [ -z "${REVIEW_API_KEY}" ]; then
+            echo "::notice title=Code Review not wired::Set REVIEW_API_KEY and replace this placeholder with your review model call."
+            exit 0
+          fi
+
+          cat > review-prompt.md <<'PROMPT'
+          Review this PR for correctness, regressions, missing tests, security
+          issues, and maintainability. Post actionable findings as PR comments.
+          Do not execute code from the PR.
+          PROMPT
+
+          echo "::notice title=Code Review placeholder::pr.diff and review-prompt.md are ready. Wire your provider CLI here."
