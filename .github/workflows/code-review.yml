@@ -1,0 +1,27 @@
+# Code Review - automated cross-provider PR review (skeleton).
+#
+# Runs on every PR. Use a DIFFERENT provider here than the one that wrote the code -
+# a model reviewing its own work shares its own blind spots. Posts findings as PR
+# comments the agent picks up on its next loop.
+
+name: Code Review
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  code-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cross-provider review
+        env:
+          # Whichever provider did NOT implement the change. Supply via secrets.
+          REVIEW_API_KEY: ${{ secrets.REVIEW_API_KEY }}
+        run: |
+          echo "TODO: pass the PR diff to a review prompt and post findings as PR comments."

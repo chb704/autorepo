@@ -1,0 +1,33 @@
+# Design Review - opinionated frontend quality gate (skeleton).
+#
+# Runs on PRs that touch the frontend, hands the diff + docs/DESIGN.md to an
+# Opus prompt, and blocks the PR if the change drifts from the vision. Wire up the
+# `design-review` step to your own runner/CLI. Backend changes intentionally skip this.
+
+name: Design Review
+
+on:
+  pull_request:
+    paths:
+      - "apps/**"
+      - "packages/**/ui/**"
+      # Narrow these globs to wherever your frontend actually lives.
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  design-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Design Review against DESIGN.md
+        env:
+          # Provide your model API key via repo/environment secrets - never commit it.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          echo "TODO: pass the PR diff + docs/DESIGN.md to your Opus review prompt."
+          echo "Exit non-zero (fail the check) when the change drifts from the vision so"
+          echo "branch protection blocks the merge until the agent addresses the feedback."
